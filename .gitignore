@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# infiniteDEV state and logs
+.infinitedev/
+.infinitedev/logs/
+.infinitedev/state.db
+.infinitedev/config.json
+
+# Beads (local cache, not git-tracked)
+.beads/beads.db
+.beads/daemon.log
+.beads/bd.sock
+.beads/export_hashes.db
+.beads/*.lock
+
+# Gastown worktrees and state
+.gastown/worktrees/
+.gastown/*.sock
+.gastown/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build output
+dist/
+build/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# PM2
+ecosystem-fork-mode.json
