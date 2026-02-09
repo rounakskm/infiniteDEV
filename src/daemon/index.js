@@ -25,7 +25,10 @@ class RateLimitDaemon {
     const claudeDebugDir = path.join(os.homedir(), '.claude', 'debug');
     this.logMonitor = new LogMonitor(claudeDebugDir, { watchLatestFile: true });
 
-    this.claudeController = new ClaudeController();
+    // Initialize with empty config, will be updated after loading config
+    this.claudeController = new ClaudeController({
+      stateManager: this.stateManager
+    });
     this.config = null;
     this.isPaused = false;
   }
@@ -42,11 +45,22 @@ class RateLimitDaemon {
       this.config = await this.loadConfig();
       console.log('[Daemon] Configuration loaded:', { tier: this.config.tier });
 
+      // Update ClaudeController with config for resume prompts and options
+      this.claudeController.config = {
+        resumePrompt: this.config.daemon?.resumePrompt || 'continue',
+        resumeStrategy: this.config.daemon?.resumeStrategy || 'auto',
+        workingDir: this.config.claude?.workingDir
+      };
+
       // Initialize rate limiter with current config
       this.rateLimiter.setConfig(this.config);
 
       // Check state on startup (recover from previous pause if needed)
       await this.checkPauseState();
+
+      // Do an immediate limit check on startup
+      console.log('[Daemon] Running initial limit check...');
+      await this.checkLimits();
 
       // Start cron job: check limits every 5 minutes
       cron.schedule('*/5 * * * *', () => this.checkLimits());
@@ -164,25 +178,13 @@ class RateLimitDaemon {
     const resetTime = signal.resetTime || this.rateLimiter.calculateNextResetTime();
     const resumeDelay = resetTime - Date.now();
 
-    // Phase 1A: Notify user to pause Claude Code (safe approach)
+    // Notify user that rate limit was hit and Claude Code should be paused
     try {
       await this.claudeController.notifyUserToPause();
-      console.log('[Daemon] User notified to pause Claude Code');
+      console.log('[Daemon] User notified about rate limit');
     } catch (error) {
       console.error('[Daemon] Error notifying user:', error.message);
     }
-
-    // Phase 1C Future: Signal-based automation (commented out for safety)
-    // try {
-    //   const result = await this.claudeController.pauseClaudeCode();
-    //   if (result.success) {
-    //     console.log(`[Daemon] Paused ${result.paused} Claude processes`);
-    //   } else {
-    //     await this.claudeController.notifyUserToPause(); // Fallback
-    //   }
-    // } catch (error) {
-    //   console.error('[Daemon] Error pausing:', error.message);
-    // }
 
     // Record event
     await this.stateManager.recordLimitEvent({
@@ -201,7 +203,7 @@ class RateLimitDaemon {
     });
 
     const hours = (resumeDelay / (1000 * 60 * 60)).toFixed(1);
-    console.log(`[Daemon] System paused. Resuming in ${hours} hours at ${new Date(resetTime).toISOString()}`);
+    console.log(`[Daemon] System paused. Will attempt automatic resume in ${hours} hours at ${new Date(resetTime).toISOString()}`);
 
     // Schedule automatic resume
     setTimeout(() => this.resumeOperations(), resumeDelay);
@@ -211,25 +213,34 @@ class RateLimitDaemon {
     console.log('[Daemon] Resuming operations...');
     this.isPaused = false;
 
-    // Phase 1A: Notify user that Claude Code can resume (safe approach)
+    // Phase 1C: Attempt automatic resume with fallback to user notification
     try {
-      await this.claudeController.notifyUserToResume();
-      console.log('[Daemon] User notified to resume Claude Code');
-    } catch (error) {
-      console.error('[Daemon] Error notifying user:', error.message);
-    }
+      const resumeOptions = {
+        customPrompt: this.config.daemon?.resumePrompt,
+        workingDir: this.config.claude?.workingDir || process.cwd()
+      };
 
-    // Phase 1C Future: Signal-based automation (commented out for safety)
-    // try {
-    //   const result = await this.claudeController.resumeClaudeCode();
-    //   if (result.success) {
-    //     console.log(`[Daemon] Resumed ${result.resumed} Claude processes`);
-    //   } else {
-    //     await this.claudeController.notifyUserToResume(); // Fallback
-    //   }
-    // } catch (error) {
-    //   console.error('[Daemon] Error resuming:', error.message);
-    // }
+      const result = await this.claudeController.resumeClaudeCode(resumeOptions);
+
+      if (result.success) {
+        console.log(`[Daemon] Claude Code resumed automatically via ${result.method}`);
+        if (result.method === 'tmux') {
+          console.log(`[Daemon] Sent prompt to tmux session: ${result.session}`);
+        } else if (result.method === 'restart') {
+          console.log(`[Daemon] Spawned new Claude Code process (PID: ${result.pid})`);
+        }
+      } else {
+        console.log('[Daemon] Automatic resume not possible, user notification sent');
+      }
+    } catch (error) {
+      console.error('[Daemon] Error during auto-resume: ${error.message}');
+      console.log('[Daemon] Falling back to user notification');
+      try {
+        await this.claudeController.notifyUserToResume();
+      } catch (notifyError) {
+        console.error('[Daemon] Error sending fallback notification:', notifyError.message);
+      }
+    }
 
     // Record resume event
     await this.stateManager.recordLimitEvent({

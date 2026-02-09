@@ -9,12 +9,21 @@ const express = require('express');
 const path = require('path');
 const axios = require('axios');
 const { execSync } = require('child_process');
+const StateManager = require('../daemon/state-manager');
 
 const PORT = process.env.PORT || 3030;
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 const PROJECT_ROOT = process.cwd();
 
 const app = express();
+
+// Initialize state manager for session tracking
+let stateManager = null;
+
+async function initStateManager() {
+  stateManager = new StateManager(path.join(PROJECT_ROOT, '.infinitedev', 'state.db'));
+  await stateManager.init();
+}
 
 // Middleware
 app.use(express.json());
@@ -106,6 +115,13 @@ const getAgentStatus = () => {
   }
   return [];
 };
+
+// Helper function to check if daemon is paused
+async function isDaemonPaused() {
+  if (!stateManager) return false;
+  const pauseState = await stateManager.getState('pause');
+  return pauseState && pauseState.resumeAt && pauseState.resumeAt > Date.now();
+}
 
 // Routes
 
@@ -329,6 +345,195 @@ app.get('/logs/:service', (req, res) => {
 });
 
 /**
+ * POST /api/session/register
+ * Register a Claude Code session with the daemon
+ */
+app.post('/api/session/register', async (req, res) => {
+  try {
+    if (!stateManager) {
+      return res.status(503).json({ error: 'State manager not initialized' });
+    }
+
+    const { sessionId, workingDir, pid, startTime } = req.body;
+
+    if (!sessionId || !pid) {
+      return res.status(400).json({ error: 'sessionId and pid are required' });
+    }
+
+    // Record in agent_sessions table
+    await stateManager.recordAgentSession(
+      'claude-code',
+      startTime || Date.now(),
+      null,
+      'active',
+      0
+    );
+
+    // Store detailed session info in kv_store
+    await stateManager.setState(`session:${sessionId}`, {
+      sessionId,
+      workingDir: workingDir || process.cwd(),
+      pid,
+      startTime: startTime || Date.now(),
+      lastActivity: Date.now(),
+      promptCount: 0,
+      status: 'active'
+    });
+
+    // Track as current active session
+    await stateManager.setState('active_session', sessionId);
+
+    console.log(`[SessionAPI] Registered Claude Code session: ${sessionId} (PID: ${pid})`);
+
+    const isPaused = await isDaemonPaused();
+
+    res.json({
+      success: true,
+      sessionId,
+      daemonStatus: 'running',
+      isPaused
+    });
+  } catch (error) {
+    console.error('[SessionAPI] Error registering session:', error.message);
+    res.status(500).json({
+      error: 'Error registering session',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/session/heartbeat
+ * Send periodic updates from Claude Code session
+ */
+app.post('/api/session/heartbeat', async (req, res) => {
+  try {
+    if (!stateManager) {
+      return res.status(503).json({ error: 'State manager not initialized' });
+    }
+
+    const { sessionId, promptCount, status } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+
+    const session = await stateManager.getState(`session:${sessionId}`);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Update session data
+    await stateManager.setState(`session:${sessionId}`, {
+      ...session,
+      lastActivity: Date.now(),
+      promptCount: promptCount !== undefined ? promptCount : session.promptCount,
+      status: status || session.status
+    });
+
+    console.log(`[SessionAPI] Heartbeat from session: ${sessionId} (prompts: ${promptCount || session.promptCount})`);
+
+    const isPaused = await isDaemonPaused();
+
+    res.json({
+      success: true,
+      isPaused
+    });
+  } catch (error) {
+    console.error('[SessionAPI] Error sending heartbeat:', error.message);
+    res.status(500).json({
+      error: 'Error processing heartbeat',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/session/end
+ * End a Claude Code session
+ */
+app.post('/api/session/end', async (req, res) => {
+  try {
+    if (!stateManager) {
+      return res.status(503).json({ error: 'State manager not initialized' });
+    }
+
+    const { sessionId, reason, finalPromptCount } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+
+    const session = await stateManager.getState(`session:${sessionId}`);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Mark as completed in agent_sessions
+    await stateManager.recordAgentSession(
+      'claude-code',
+      session.startTime,
+      Date.now(),
+      'completed',
+      finalPromptCount || session.promptCount
+    );
+
+    // Update session state
+    await stateManager.setState(`session:${sessionId}`, {
+      ...session,
+      endTime: Date.now(),
+      status: 'completed',
+      exitReason: reason
+    });
+
+    // Clear active session if this was it
+    const activeSessId = await stateManager.getState('active_session');
+    if (activeSessId === sessionId) {
+      await stateManager.setState('active_session', null);
+    }
+
+    console.log(`[SessionAPI] Session ${sessionId} ended: ${reason || 'unknown'}`);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[SessionAPI] Error ending session:', error.message);
+    res.status(500).json({
+      error: 'Error ending session',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/session/status
+ * Check daemon pause status (for wrapper script)
+ */
+app.get('/api/session/status', async (req, res) => {
+  try {
+    if (!stateManager) {
+      return res.status(503).json({ error: 'State manager not initialized' });
+    }
+
+    const pauseState = await stateManager.getState('pause');
+    const isPaused = pauseState && pauseState.resumeAt && pauseState.resumeAt > Date.now();
+
+    res.json({
+      isPaused,
+      pausedAt: pauseState?.pausedAt || null,
+      resumeAt: pauseState?.resumeAt || null,
+      reason: pauseState?.reason || null,
+      daemonStatus: 'running'
+    });
+  } catch (error) {
+    console.error('[SessionAPI] Error checking session status:', error.message);
+    res.status(500).json({
+      error: 'Error checking status',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Error handling middleware
  */
 app.use((err, req, res, next) => {
@@ -351,29 +556,56 @@ app.use((req, res) => {
 });
 
 // Start server
-const server = app.listen(PORT, () => {
-  console.log(`[Health] Health monitor listening on port ${PORT}`);
-  console.log(`[Health] Endpoints:`);
-  console.log(`  GET  http://localhost:${PORT}/health`);
-  console.log(`  GET  http://localhost:${PORT}/status`);
-  console.log(`  GET  http://localhost:${PORT}/metrics`);
-  console.log(`  GET  http://localhost:${PORT}/tasks`);
-  console.log(`  GET  http://localhost:${PORT}/logs/:service`);
-  console.log(`  POST http://localhost:${PORT}/pause`);
-  console.log(`  POST http://localhost:${PORT}/resume`);
-});
+async function startServer() {
+  try {
+    await initStateManager();
+    console.log('[Health] State manager initialized');
+  } catch (error) {
+    console.error('[Health] Failed to initialize state manager:', error.message);
+  }
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('[Health] Shutting down...');
-  server.close(() => {
-    process.exit(0);
+  const server = app.listen(PORT, () => {
+    console.log(`[Health] Health monitor listening on port ${PORT}`);
+    console.log(`[Health] Endpoints:`);
+    console.log(`  GET  http://localhost:${PORT}/health`);
+    console.log(`  GET  http://localhost:${PORT}/status`);
+    console.log(`  GET  http://localhost:${PORT}/metrics`);
+    console.log(`  GET  http://localhost:${PORT}/tasks`);
+    console.log(`  GET  http://localhost:${PORT}/logs/:service`);
+    console.log(`  POST http://localhost:${PORT}/pause`);
+    console.log(`  POST http://localhost:${PORT}/resume`);
+    console.log(`[Health] Session Tracking Endpoints:`);
+    console.log(`  POST http://localhost:${PORT}/api/session/register`);
+    console.log(`  POST http://localhost:${PORT}/api/session/heartbeat`);
+    console.log(`  POST http://localhost:${PORT}/api/session/end`);
+    console.log(`  GET  http://localhost:${PORT}/api/session/status`);
   });
-});
 
-// Unhandled promise rejection
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('[Health] Unhandled rejection:', reason);
-});
+  // Graceful shutdown
+  process.on('SIGINT', () => {
+    console.log('[Health] Shutting down...');
+    if (stateManager) {
+      stateManager.close().then(() => {
+        server.close(() => {
+          process.exit(0);
+        });
+      });
+    } else {
+      server.close(() => {
+        process.exit(0);
+      });
+    }
+  });
+
+  // Unhandled promise rejection
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Health] Unhandled rejection:', reason);
+  });
+}
+
+// Start the server if this is the main module
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;
