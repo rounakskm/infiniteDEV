@@ -6,10 +6,10 @@
 
 infiniteDEV solves the 5-hour limit problem by:
 
-- **Continuous Operation**: Runs 24/7 across rate limit windows
-- **Automatic Pause/Resume**: Detects limits, pauses work, auto-resumes when quota refreshes
-- **Multi-Agent Orchestration**: Specialized agents (Architect, Builders, Tester, Reviewer, LeadDev) work in parallel
-- **Smart Task Management**: Beads git-backed issue tracker with dependency graphs
+- **Standalone Daemon**: Monitors Claude Code without any dependencies (not tied to Gastown/Beads)
+- **Smart Notifications**: Detects rate limits, alerts user to pause, notifies when ready to resume
+- **Crash Recovery**: Persists pause state in SQLite for automatic recovery
+- **Optional Orchestration**: Works alone OR integrates with Beads/Gastown for multi-agent task coordination
 - **Easy Onboarding**: Single `./install.sh` script sets up everything
 
 ## Quick Start
@@ -48,38 +48,46 @@ The Mayor will automatically assign this task to the Architect agent, which will
 
 ## How It Works
 
-### Architecture
+### Architecture (Phase 1A: Standalone Daemon)
 
 ```
-┌─ User creates task via idev CLI
+┌─ Daemon (Standalone) - Independent of Gastown/Beads
+│  ├─ Monitors ~/.claude/debug/*.txt for rate limit errors
+│  ├─ Detects running Claude Code processes (via ps aux)
+│  ├─ Notifies user when rate limit hit (pause Claude Code)
+│  ├─ Notifies user when ready to resume (after 5-hour window)
+│  └─ Persists state in SQLite for crash recovery
 │
-├─ Beads tracks task (git-backed ledger with dependencies)
+├─ Claude Code (Your Work) - Runs continuously
+│  └─ Automatically stops when any rate limit is reached
 │
-├─ Mayor polls "ready tasks" every 30s
-│
-├─ Mayor routes tasks to specialized agents:
-│  ├─ Architect: designs, decomposes work
-│  ├─ Builders: implement features (2 instances)
-│  ├─ Tester: validates, writes tests
-│  ├─ Reviewer: quality gate
-│  └─ LeadDev: coordinates, chills when idle
-│
-├─ Daemon monitors rate limits (5-hour, weekly)
-│  └─ On limit: pauses Mayor
-│  └─ On reset: auto-resumes Mayor
-│
-└─ Agents update tasks as they complete
+└─ Beads + Gastown (Optional) - Task orchestration layer
+   ├─ Mayor polls "ready tasks" every 30s
+   ├─ Routes tasks to specialized agents:
+   │  ├─ Architect: designs, decomposes work
+   │  ├─ Builders: implement features (2 instances)
+   │  ├─ Tester: validates, writes tests
+   │  ├─ Reviewer: quality gate
+   │  └─ LeadDev: coordinates
+   └─ Agents update tasks as they complete
 ```
 
-### Rate Limit Detection
+### Rate Limit Detection (Phase 1A)
 
-Three-layer hybrid detection:
+The daemon monitors Claude Code directly:
 
-1. **Log Monitoring**: Tail logs for "rate limit exceeded" errors
-2. **API Headers**: Check `X-RateLimit-Remaining` from Claude API
-3. **Heuristic**: Count prompts, preemptively pause at 90% of limit
+1. **Log Monitoring**: Tails `~/.claude/debug/*.txt` for rate limit errors
+2. **Process Detection**: Identifies running Claude Code processes
+3. **User Notification**: Console + desktop alerts for pause/resume
 
-Tiers supported (customizable):
+On rate limit detection:
+- Console and desktop notification: "RATE LIMIT REACHED - Please pause Claude Code"
+- User manually pauses Claude Code (Ctrl+C)
+- Daemon waits for 5-hour window to reset
+- On reset: "RATE LIMIT REFRESHED - Ready to resume"
+- User manually resumes Claude Code
+
+**Tiers supported** (customizable in `.infinitedev/config.json`):
 - Pro $20: 45 prompts per 5 hours
 - Max $100: 250 prompts per 5 hours
 - Max $200: 800 prompts per 5 hours
@@ -150,26 +158,34 @@ Edit `.infinitedev/config.json` to customize:
 
 ## Rate Limiting
 
-### Automatic Detection
+### Phase 1A: User Notification (Current)
 
-The daemon automatically detects when you hit rate limits and:
-1. Logs the event
-2. Pauses the Mayor (stops task assignment)
-3. Calculates when limits refresh
-4. Schedules automatic resume
+The daemon monitors Claude Code and automatically:
+1. Detects rate limit errors in `~/.claude/debug/*.txt`
+2. Shows console notification: "RATE LIMIT REACHED - Please pause Claude Code"
+3. Shows desktop notification (macOS/Linux/Windows)
+4. Records event in SQLite for recovery
+5. Waits for 5-hour window to reset
+6. Shows "RATE LIMIT REFRESHED - Ready to resume" notification
 
-### Manual Override
+**User action required:**
+- Pause: Press Ctrl+C in Claude Code terminal
+- Resume: Run `claude-code` to start new session
+
+### Manual Status Check
 
 ```bash
-# Manually pause
-idev pause
-
-# Check status
+# Check daemon status
 idev status
 
-# Resume when ready
-idev resume
+# View rate limit history
+sqlite3 .infinitedev/state.db "SELECT * FROM rate_limit_events ORDER BY timestamp DESC LIMIT 5;"
 ```
+
+### Future Phases
+
+**Phase 1B** (Coming soon): Automatic process tracking and state persistence
+**Phase 1C** (Coming later): Signal-based automation (pause/resume via SIGTSTP/SIGCONT)
 
 ## Multi-Agent Workflow
 
