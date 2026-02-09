@@ -6,11 +6,12 @@
  */
 
 const path = require('path');
+const os = require('os');
 const cron = require('node-cron');
 const StateManager = require('./state-manager');
 const RateLimiter = require('./rate-limiter');
 const LogMonitor = require('./log-monitor');
-const GastownController = require('./gastown-controller');
+const ClaudeController = require('./claude-controller');
 
 const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
 
@@ -19,8 +20,12 @@ class RateLimitDaemon {
     this.projectRoot = process.cwd();
     this.stateManager = new StateManager(path.join(this.projectRoot, '.infinitedev', 'state.db'));
     this.rateLimiter = new RateLimiter(this.stateManager);
-    this.logMonitor = new LogMonitor(path.join(this.projectRoot, '.gastown', 'logs', 'mayor.log'));
-    this.gastownController = new GastownController(this.projectRoot);
+
+    // Watch Claude Code debug directory instead of Gastown logs
+    const claudeDebugDir = path.join(os.homedir(), '.claude', 'debug');
+    this.logMonitor = new LogMonitor(claudeDebugDir, { watchLatestFile: true });
+
+    this.claudeController = new ClaudeController();
     this.config = null;
     this.isPaused = false;
   }
@@ -159,13 +164,25 @@ class RateLimitDaemon {
     const resetTime = signal.resetTime || this.rateLimiter.calculateNextResetTime();
     const resumeDelay = resetTime - Date.now();
 
-    // Pause Mayor
+    // Phase 1A: Notify user to pause Claude Code (safe approach)
     try {
-      await this.gastownController.pauseMayor();
-      console.log('[Daemon] Mayor paused');
+      await this.claudeController.notifyUserToPause();
+      console.log('[Daemon] User notified to pause Claude Code');
     } catch (error) {
-      console.error('[Daemon] Error pausing Mayor:', error.message);
+      console.error('[Daemon] Error notifying user:', error.message);
     }
+
+    // Phase 1C Future: Signal-based automation (commented out for safety)
+    // try {
+    //   const result = await this.claudeController.pauseClaudeCode();
+    //   if (result.success) {
+    //     console.log(`[Daemon] Paused ${result.paused} Claude processes`);
+    //   } else {
+    //     await this.claudeController.notifyUserToPause(); // Fallback
+    //   }
+    // } catch (error) {
+    //   console.error('[Daemon] Error pausing:', error.message);
+    // }
 
     // Record event
     await this.stateManager.recordLimitEvent({
@@ -194,13 +211,25 @@ class RateLimitDaemon {
     console.log('[Daemon] Resuming operations...');
     this.isPaused = false;
 
-    // Resume Mayor
+    // Phase 1A: Notify user that Claude Code can resume (safe approach)
     try {
-      await this.gastownController.resumeMayor();
-      console.log('[Daemon] Mayor resumed');
+      await this.claudeController.notifyUserToResume();
+      console.log('[Daemon] User notified to resume Claude Code');
     } catch (error) {
-      console.error('[Daemon] Error resuming Mayor:', error.message);
+      console.error('[Daemon] Error notifying user:', error.message);
     }
+
+    // Phase 1C Future: Signal-based automation (commented out for safety)
+    // try {
+    //   const result = await this.claudeController.resumeClaudeCode();
+    //   if (result.success) {
+    //     console.log(`[Daemon] Resumed ${result.resumed} Claude processes`);
+    //   } else {
+    //     await this.claudeController.notifyUserToResume(); // Fallback
+    //   }
+    // } catch (error) {
+    //   console.error('[Daemon] Error resuming:', error.message);
+    // }
 
     // Record resume event
     await this.stateManager.recordLimitEvent({
