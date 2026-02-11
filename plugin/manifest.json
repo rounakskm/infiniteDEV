@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "1.0",
+  "name": "infiniteDEV",
+  "displayName": "infiniteDEV Session Tracking",
+  "version": "1.0.0",
+  "description": "Automatically tracks Claude Code sessions with infiniteDEV daemon for rate limit management",
+  "author": "infiniteDEV",
+  "repository": "",
+  "license": "MIT",
+  "capabilities": {
+    "hooks": true
+  },
+  "settings": {
+    "daemonUrl": {
+      "type": "string",
+      "default": "http://localhost:3030",
+      "description": "infiniteDEV daemon API URL"
+    },
+    "autoStart": {
+      "type": "boolean",
+      "default": true,
+      "description": "Auto-start daemon if not running"
+    },
+    "daemonPath": {
+      "type": "string",
+      "default": "",
+      "description": "Path to infiniteDEV installation (for auto-start)"
+    }
+  }
+}

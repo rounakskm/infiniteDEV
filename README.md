@@ -19,7 +19,7 @@ infiniteDEV solves the 5-hour limit problem by:
 - Node.js 16+
 - Git
 - Go 1.23+
-- tmux 3.0+
+- tmux 3.0+ (recommended for Phase 1C auto-resume, but optional)
 
 ### Installation
 
@@ -30,6 +30,38 @@ cd infiniteDEV
 ```
 
 This installs all dependencies, initializes services, and starts the daemon.
+
+### Testing Phase 1C: Automatic Resume
+
+To test the automatic resume functionality:
+
+**Terminal 1: Start the daemon**
+```bash
+cd /Users/rounakskm/AI-projects/infiniteDEV
+node src/daemon/index.js
+```
+
+**Terminal 2: Start Claude Code (with tmux for optimal experience)**
+```bash
+cd /Users/rounakskm/AI-projects/infiniteDEV
+tmux new -s claude
+claude-code
+```
+
+**Terminal 3: Continue development**
+```bash
+cd /Users/rounakskm/AI-projects/infiniteDEV
+# Use Claude Code in Terminal 2 to continue developing
+# Daemon will auto-detect rate limit and pause
+# When rate limit resets, daemon auto-resumes Claude Code!
+```
+
+**What to watch for:**
+- Terminal 1 (daemon): `[Daemon] Rate limit threshold reached, pausing operations`
+- Terminal 1 (daemon): `[Daemon] Will attempt automatic resume in ~5.0 hours`
+- After 5 hours: `[Daemon] Claude Code resumed automatically via stdin` (or `restart`)
+
+**Note:** If you don't have tmux installed, the daemon will automatically fall back to the restart strategy (`claude --resume`).
 
 ### First Task
 
@@ -48,18 +80,21 @@ The Mayor will automatically assign this task to the Architect agent, which will
 
 ## How It Works
 
-### Architecture (Phase 1A: Standalone Daemon)
+### Architecture (Phase 1C: Automatic Resume)
 
 ```
 ┌─ Daemon (Standalone) - Independent of Gastown/Beads
 │  ├─ Monitors ~/.claude/debug/*.txt for rate limit errors
 │  ├─ Detects running Claude Code processes (via ps aux)
-│  ├─ Notifies user when rate limit hit (pause Claude Code)
-│  ├─ Notifies user when ready to resume (after 5-hour window)
-│  └─ Persists state in SQLite for crash recovery
+│  ├─ Notifies user when rate limit hit
+│  └─ AUTOMATICALLY RESUMES when rate limit resets
+│     ├─ Strategy 1: Send "continue" via tmux (if available)
+│     ├─ Strategy 2: Restart with `claude --resume` (fallback)
+│     └─ Strategy 3: Show notification (final fallback)
 │
 ├─ Claude Code (Your Work) - Runs continuously
-│  └─ Automatically stops when any rate limit is reached
+│  ├─ Automatically stops when rate limit is reached
+│  └─ Automatically resumes via daemon when limit resets
 │
 └─ Beads + Gastown (Optional) - Task orchestration layer
    ├─ Mayor polls "ready tasks" every 30s
@@ -158,19 +193,53 @@ Edit `.infinitedev/config.json` to customize:
 
 ## Rate Limiting
 
-### Phase 1A: User Notification (Current)
+### Phase 1C: Automatic Resume (Current)
 
-The daemon monitors Claude Code and automatically:
+The daemon now automatically resumes Claude Code when rate limits reset! ✨
+
+**How it works:**
 1. Detects rate limit errors in `~/.claude/debug/*.txt`
 2. Shows console notification: "RATE LIMIT REACHED - Please pause Claude Code"
-3. Shows desktop notification (macOS/Linux/Windows)
-4. Records event in SQLite for recovery
-5. Waits for 5-hour window to reset
-6. Shows "RATE LIMIT REFRESHED - Ready to resume" notification
+3. Records event in SQLite for recovery
+4. Waits for 5-hour window to reset
+5. **Automatically resumes Claude Code** using smart strategy selection:
+   - **Strategy 1 (Preferred):** Sends "continue" prompt via tmux if Claude still running
+   - **Strategy 2 (Fallback):** Restarts Claude Code with `claude --resume`
+   - **Strategy 3 (Final):** Shows user notification if both fail
 
-**User action required:**
-- Pause: Press Ctrl+C in Claude Code terminal
-- Resume: Run `claude-code` to start new session
+**No user action required for resume!** The daemon handles everything automatically.
+
+### Automatic Resume Strategies
+
+**Stdin Strategy** (requires tmux):
+- Claude Code continues running after rate limit hit
+- Daemon sends "continue" prompt via tmux
+- Session state maintained, development resumes seamlessly
+
+**Restart Strategy** (fallback):
+- Claude Code exited after rate limit
+- Daemon runs `claude --resume` in project directory
+- User selects previous session to continue
+- All context available via session history
+
+**Notification Strategy** (final fallback):
+- Both automatic strategies fail (edge case)
+- Daemon shows notification asking user to resume manually
+- Always available as last resort
+
+### Configuration
+
+Enable/disable auto-resume in `.infinitedev/config.json`:
+
+```json
+{
+  "daemon": {
+    "autoResume": true,
+    "resumePrompt": "continue",
+    "resumeStrategy": "auto"
+  }
+}
+```
 
 ### Manual Status Check
 
@@ -180,12 +249,18 @@ idev status
 
 # View rate limit history
 sqlite3 .infinitedev/state.db "SELECT * FROM rate_limit_events ORDER BY timestamp DESC LIMIT 5;"
+
+# Run test suite
+node test-phase1c.js
+
+# Debug mode
+LOG_LEVEL=debug node src/daemon/index.js
 ```
 
 ### Future Phases
 
-**Phase 1B** (Coming soon): Automatic process tracking and state persistence
-**Phase 1C** (Coming later): Signal-based automation (pause/resume via SIGTSTP/SIGCONT)
+**Phase 1C-Beta** (Coming soon): Direct PTY write (no tmux required), automatic session selection
+**Phase 1B** (Coming later): Working directory persistence, session ID tracking
 
 ## Multi-Agent Workflow
 
@@ -214,10 +289,13 @@ $ idev task create "Build user authentication system" --type feature
 ## Features
 
 - ✅ 24/7 autonomous development
-- ✅ Automatic rate limit detection and pause/resume
+- ✅ **Automatic rate limit detection AND auto-resume** (Phase 1C)
+  - Smart strategy selection (tmux stdin → restart → notify)
+  - No manual "claude-code" commands needed
+  - Works even while you sleep!
 - ✅ Multi-agent orchestration with role specialization
 - ✅ Git-backed task tracking with dependencies
-- ✅ Zero manual intervention (mostly)
+- ✅ Zero manual intervention for pause/resume cycle
 - ✅ Crash recovery with state persistence
 - ✅ Real-time monitoring and manual control
 - ✅ Customizable agent count and rate limits

@@ -1,0 +1,31 @@
+{
+  "description": "infiniteDEV automatic session tracking",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/register-session.sh",
+            "timeout": 10,
+            "description": "Register session with infiniteDEV daemon"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/end-session.sh",
+            "timeout": 5,
+            "description": "Deregister session from infiniteDEV daemon"
+          }
+        ]
+      }
+    ]
+  }
+}

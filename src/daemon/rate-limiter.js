@@ -9,17 +9,17 @@ class RateLimiter {
     this.config = null;
     this.tierLimits = {
       'pro-20': {
-        window: 5 * 60 * 60 * 1000, // 5 hours
+        window: 5 * 60 * 1000, // 5 minutes (for testing)
         prompts: 45,
         weeklyHours: 60
       },
       'max-100': {
-        window: 5 * 60 * 60 * 1000,
+        window: 5 * 60 * 1000,
         prompts: 250,
         weeklyHours: 300
       },
       'max-200': {
-        window: 5 * 60 * 60 * 1000,
+        window: 5 * 60 * 1000,
         prompts: 800,
         weeklyHours: 1000
       }
@@ -52,8 +52,8 @@ class RateLimiter {
     const limits = this.getTierLimits(this.config.tier);
     const now = new Date();
 
-    // For 5-hour window: next reset is now + 5 hours
-    if (limits.window === 5 * 60 * 60 * 1000) {
+    // For 5-minute window (testing) or 5-hour window: next reset is now + window duration
+    if (limits.window === 5 * 60 * 1000 || limits.window === 5 * 60 * 60 * 1000) {
       return now.getTime() + limits.window;
     }
 
