@@ -213,33 +213,14 @@ class RateLimitDaemon {
     console.log('[Daemon] Resuming operations...');
     this.isPaused = false;
 
-    // Phase 1C: Attempt automatic resume with fallback to user notification
+    // Clear pause state so the hook allows new sessions
+    await this.stateManager.setState('pause', null);
+
+    // Notify user they can resume
     try {
-      const resumeOptions = {
-        customPrompt: this.config.daemon?.resumePrompt,
-        workingDir: this.config.claude?.workingDir || process.cwd()
-      };
-
-      const result = await this.claudeController.resumeClaudeCode(resumeOptions);
-
-      if (result.success) {
-        console.log(`[Daemon] Claude Code resumed automatically via ${result.method}`);
-        if (result.method === 'tmux') {
-          console.log(`[Daemon] Sent prompt to tmux session: ${result.session}`);
-        } else if (result.method === 'restart') {
-          console.log(`[Daemon] Spawned new Claude Code process (PID: ${result.pid})`);
-        }
-      } else {
-        console.log('[Daemon] Automatic resume not possible, user notification sent');
-      }
+      await this.claudeController.notifyUserToResume();
     } catch (error) {
-      console.error('[Daemon] Error during auto-resume: ${error.message}');
-      console.log('[Daemon] Falling back to user notification');
-      try {
-        await this.claudeController.notifyUserToResume();
-      } catch (notifyError) {
-        console.error('[Daemon] Error sending fallback notification:', notifyError.message);
-      }
+      console.error('[Daemon] Error notifying user:', error.message);
     }
 
     // Record resume event
@@ -250,10 +231,7 @@ class RateLimitDaemon {
       usageData: await this.stateManager.getCurrentUsage()
     });
 
-    // Clear pause state
-    await this.stateManager.setState('pause', null);
-
-    console.log('[Daemon] Operations resumed successfully');
+    console.log('[Daemon] Operations resumed. User can now run claude.');
   }
 }
 

@@ -8,12 +8,16 @@ TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
 
 DAEMON_URL="${INFINITEDEV_DAEMON_URL:-http://localhost:3030}"
 REGISTRATION_FLAG="/tmp/infinitedev-registered-${SESSION_ID}"
+COUNT_FILE="/tmp/infinitedev-count-${SESSION_ID}"
 
-# If already registered, send heartbeat and exit
+# If already registered, increment count and send heartbeat
 if [ -f "$REGISTRATION_FLAG" ]; then
+  COUNT=$(cat "$COUNT_FILE" 2>/dev/null || echo "0")
+  COUNT=$((COUNT + 1))
+  echo "$COUNT" > "$COUNT_FILE"
   curl -s -X POST "${DAEMON_URL}/api/session/heartbeat" \
     -H "Content-Type: application/json" \
-    -d "{\"sessionId\": \"${SESSION_ID}\"}" >/dev/null 2>&1 || true
+    -d "{\"sessionId\": \"${SESSION_ID}\", \"promptCount\": ${COUNT}}" >/dev/null 2>&1 || true
   exit 0
 fi
 
@@ -44,6 +48,13 @@ if [ "$IS_PAUSED" = "true" ]; then
   exit 2
 fi
 
-# Mark as registered
+# Mark as registered and record first prompt
 touch "$REGISTRATION_FLAG"
+echo "1" > "$COUNT_FILE"
+
+# Send first heartbeat to set initial count
+curl -s -X POST "${DAEMON_URL}/api/session/heartbeat" \
+  -H "Content-Type: application/json" \
+  -d "{\"sessionId\": \"${SESSION_ID}\", \"promptCount\": 1}" >/dev/null 2>&1 || true
+
 exit 0

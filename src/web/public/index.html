@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>infiniteDEV Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #21262d;
+    }
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #58a6ff;
+    }
+    header h1 span { color: #7ee787; }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-green { background: #1f4a2e; color: #7ee787; }
+    .badge-red   { background: #4a1f1f; color: #f85149; }
+    .badge-yellow{ background: #4a3a1f; color: #e3b341; }
+    .badge-blue  { background: #1f3050; color: #58a6ff; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .card h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #8b949e;
+      margin-bottom: 12px;
+    }
+    .card .value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #e6edf3;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .card .sub {
+      font-size: 12px;
+      color: #8b949e;
+    }
+
+    .progress-bar-wrap {
+      background: #21262d;
+      border-radius: 4px;
+      height: 8px;
+      margin: 10px 0 6px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.5s ease, background 0.3s ease;
+    }
+    .progress-green  { background: #238636; }
+    .progress-yellow { background: #d29922; }
+    .progress-red    { background: #da3633; }
+
+    .status-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green  { background: #3fb950; box-shadow: 0 0 8px #3fb950; }
+    .dot-red    { background: #f85149; box-shadow: 0 0 8px #f85149; animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+    .status-text h3 { font-size: 16px; font-weight: 600; }
+    .status-text p  { font-size: 13px; color: #8b949e; margin-top: 2px; }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    button {
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-pause  { background: #da3633; color: #fff; border-color: #da3633; }
+    .btn-resume { background: #238636; color: #fff; border-color: #238636; }
+    .btn-refresh{ background: transparent; color: #58a6ff; border-color: #30363d; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      color: #8b949e;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #21262d;
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #161b22;
+      color: #c9d1d9;
+      word-break: break-all;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1c2128; }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #8b949e;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .section { margin-bottom: 24px; }
+
+    .countdown {
+      font-size: 36px;
+      font-weight: 700;
+      color: #f85149;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #error-bar {
+      display: none;
+      background: #4a1f1f;
+      border: 1px solid #f85149;
+      border-radius: 6px;
+      padding: 10px 16px;
+      color: #f85149;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    #last-update {
+      font-size: 11px;
+      color: #484f58;
+      text-align: right;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>infinite<span>DEV</span> Dashboard</h1>
+    <span class="badge badge-blue" id="tier-badge">pro-20</span>
+  </header>
+
+  <div id="error-bar"></div>
+
+  <div id="status-card" class="status-card">
+    <div class="status-dot dot-green" id="status-dot"></div>
+    <div class="status-text">
+      <h3 id="status-title">Loading...</h3>
+      <p id="status-sub"></p>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-pause"   id="btn-pause"   onclick="manualPause()">Pause Sessions</button>
+    <button class="btn-resume"  id="btn-resume"  onclick="manualResume()">Resume Now</button>
+    <button class="btn-refresh" onclick="fetchDashboard()">Refresh</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Prompts Used</h2>
+      <div class="value" id="prompts-used">-</div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar progress-green" id="usage-bar" style="width:0%"></div>
+      </div>
+      <div class="sub" id="usage-sub">of 45 (0%)</div>
+    </div>
+    <div class="card">
+      <h2>Resumes In</h2>
+      <div class="countdown" id="countdown">—</div>
+      <div class="sub" id="countdown-sub">Not paused</div>
+    </div>
+    <div class="card">
+      <h2>Active Session</h2>
+      <div class="value" style="font-size:14px; word-break:break-all;" id="session-id">—</div>
+      <div class="sub" id="session-dir"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Recent Sessions</div>
+    <div class="card" style="padding:0;">
+      <table>
+        <thead>
+          <tr>
+            <th>Session ID</th>
+            <th>Status</th>
+            <th>Prompts</th>
+            <th>Working Dir</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Rate Limit Events</div>
+    <div class="card" style="padding:0;">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Time</th>
+            <th>Tier</th>
+            <th>Reset At</th>
+          </tr>
+        </thead>
+        <tbody id="events-table"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="last-update">Last updated: never</div>
+
+  <script>
+    const API = 'http://localhost:3031/api/v2';
+    let countdownInterval = null;
+
+    function fmtTime(ts) {
+      if (!ts) return '—';
+      return new Date(ts).toLocaleTimeString();
+    }
+    function fmtDate(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      return d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+    }
+    function truncate(str, n = 40) {
+      if (!str) return '—';
+      return str.length > n ? '...' + str.slice(-n) : str;
+    }
+    function shortId(id) {
+      if (!id) return '—';
+      return id.slice(0, 8) + '…';
+    }
+
+    function startCountdown(resumeAt) {
+      if (countdownInterval) clearInterval(countdownInterval);
+      function tick() {
+        const left = Math.max(0, resumeAt - Date.now());
+        const m = Math.floor(left / 60000);
+        const s = Math.floor((left % 60000) / 1000);
+        document.getElementById('countdown').textContent =
+          `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+        if (left === 0) {
+          clearInterval(countdownInterval);
+          fetchDashboard();
+        }
+      }
+      tick();
+      countdownInterval = setInterval(tick, 1000);
+    }
+
+    async function fetchDashboard() {
+      try {
+        const r = await fetch(`${API}/dashboard`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const d = await r.json();
+        document.getElementById('error-bar').style.display = 'none';
+        renderDashboard(d);
+        document.getElementById('last-update').textContent =
+          'Last updated: ' + new Date().toLocaleTimeString();
+      } catch (err) {
+        const bar = document.getElementById('error-bar');
+        bar.style.display = 'block';
+        bar.textContent = 'Cannot reach dashboard API: ' + err.message;
+      }
+    }
+
+    function renderDashboard(d) {
+      // Status card
+      const dot   = document.getElementById('status-dot');
+      const title = document.getElementById('status-title');
+      const sub   = document.getElementById('status-sub');
+
+      if (d.pause.isPaused) {
+        dot.className   = 'status-dot dot-red';
+        title.textContent = 'PAUSED — Rate Limit Active';
+        sub.textContent   = `Resumes at ${fmtTime(d.pause.resumeAt)} · Reason: ${d.pause.reason || 'unknown'}`;
+        document.getElementById('btn-pause').disabled  = true;
+        document.getElementById('btn-resume').disabled = false;
+        startCountdown(d.pause.resumeAt);
+        document.getElementById('countdown-sub').textContent =
+          'until auto-resume at ' + fmtTime(d.pause.resumeAt);
+      } else {
+        dot.className   = 'status-dot dot-green';
+        title.textContent = 'ACTIVE — Sessions Allowed';
+        sub.textContent   = 'Daemon is running. No rate limit active.';
+        document.getElementById('btn-pause').disabled  = false;
+        document.getElementById('btn-resume').disabled = true;
+        if (countdownInterval) clearInterval(countdownInterval);
+        document.getElementById('countdown').textContent = '—';
+        document.getElementById('countdown-sub').textContent = 'Not paused';
+      }
+
+      // Usage bar
+      const pct = d.usage.percentUsed;
+      const bar = document.getElementById('usage-bar');
+      bar.style.width = pct + '%';
+      bar.className = 'progress-bar ' + (pct >= 90 ? 'progress-red' : pct >= 70 ? 'progress-yellow' : 'progress-green');
+      document.getElementById('prompts-used').textContent = d.usage.promptsUsed;
+      document.getElementById('usage-sub').textContent = `of ${d.usage.limit} (${pct}%)`;
+
+      // Active session
+      if (d.activeSession) {
+        document.getElementById('session-id').textContent = shortId(d.activeSession.sessionId) + ' · ' + (d.activeSession.status || 'active');
+        document.getElementById('session-dir').textContent = truncate(d.activeSession.workingDir);
+      } else {
+        document.getElementById('session-id').textContent = 'None';
+        document.getElementById('session-dir').textContent = '';
+      }
+
+      // Sessions table
+      const stbody = document.getElementById('sessions-table');
+      stbody.innerHTML = d.sessions.length === 0
+        ? '<tr><td colspan="5" style="color:#484f58;text-align:center;padding:20px;">No sessions recorded</td></tr>'
+        : d.sessions.map(s => `
+            <tr>
+              <td>${shortId(s.sessionId)}</td>
+              <td><span class="badge ${s.status === 'active' ? 'badge-green' : 'badge-blue'}">${s.status || 'unknown'}</span></td>
+              <td>${s.promptCount || 0}</td>
+              <td title="${s.workingDir || ''}">${truncate(s.workingDir, 35)}</td>
+              <td>${fmtTime(s.startTime)}</td>
+            </tr>`).join('');
+
+      // Events table
+      const etbody = document.getElementById('events-table');
+      etbody.innerHTML = d.recentEvents.length === 0
+        ? '<tr><td colspan="4" style="color:#484f58;text-align:center;padding:20px;">No events recorded</td></tr>'
+        : d.recentEvents.map(e => {
+            const typeColor = e.type === 'RESUMED' || e.type === 'MANUAL_RESUME' ? 'badge-green'
+                            : e.type === 'MANUAL_PAUSE' ? 'badge-yellow'
+                            : 'badge-red';
+            return `<tr>
+              <td><span class="badge ${typeColor}">${e.type}</span></td>
+              <td>${fmtDate(e.timestamp)}</td>
+              <td>${e.tier || '—'}</td>
+              <td>${e.resetTime ? fmtTime(e.resetTime) : '—'}</td>
+            </tr>`;
+          }).join('');
+    }
+
+    async function manualPause() {
+      try {
+        document.getElementById('btn-pause').disabled = true;
+        const r = await fetch(`${API}/pause`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ durationMs: 5 * 60 * 1000 })
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await fetchDashboard();
+      } catch (err) {
+        alert('Pause failed: ' + err.message);
+        document.getElementById('btn-pause').disabled = false;
+      }
+    }
+
+    async function manualResume() {
+      try {
+        document.getElementById('btn-resume').disabled = true;
+        const r = await fetch(`${API}/resume`, { method: 'POST' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        await fetchDashboard();
+      } catch (err) {
+        alert('Resume failed: ' + err.message);
+        document.getElementById('btn-resume').disabled = false;
+      }
+    }
+
+    // Initial load + auto-refresh every 10 seconds
+    fetchDashboard();
+    setInterval(fetchDashboard, 10000);
+  </script>
+</body>
+</html>

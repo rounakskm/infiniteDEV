@@ -37,6 +37,23 @@ module.exports = {
       }
     },
     {
+      name: 'infinitedev-web',
+      script: './src/web/index.js',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '200M',
+      error_file: '.infinitedev/logs/web-error.log',
+      out_file: '.infinitedev/logs/web-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      env: {
+        WEB_PORT: 3031,
+        NODE_ENV: 'production',
+        LOG_LEVEL: 'info'
+      }
+    },
+    {
       name: 'infinitedev-mayor',
       script: 'bash',
       args: ['-c', 'cd .gastown && gt mayor attach --loop --interval 30s'],

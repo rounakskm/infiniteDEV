@@ -423,15 +423,22 @@ app.post('/api/session/heartbeat', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Update session data
+    const updatedCount = promptCount !== undefined ? promptCount : session.promptCount;
+
+    // Update session data in kv_store
     await stateManager.setState(`session:${sessionId}`, {
       ...session,
       lastActivity: Date.now(),
-      promptCount: promptCount !== undefined ? promptCount : session.promptCount,
+      promptCount: updatedCount,
       status: status || session.status
     });
 
-    console.log(`[SessionAPI] Heartbeat from session: ${sessionId} (prompts: ${promptCount || session.promptCount})`);
+    // Persist live count to agent_sessions so checkLimits() sees it
+    if (promptCount !== undefined && session.startTime) {
+      await stateManager.updateSessionPrompts(session.startTime, promptCount);
+    }
+
+    console.log(`[SessionAPI] Heartbeat from session: ${sessionId} (prompts: ${updatedCount})`);
 
     const isPaused = await isDaemonPaused();
 

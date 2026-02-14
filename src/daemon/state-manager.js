@@ -139,6 +139,13 @@ class StateManager {
     }
   }
 
+  async updateSessionPrompts(startTime, promptsUsed) {
+    await this.run(
+      `UPDATE agent_sessions SET prompts_used = ? WHERE agent_name = 'claude-code' AND start_time = ?`,
+      [promptsUsed, startTime]
+    );
+  }
+
   async getCurrentUsage() {
     // Get usage from most recent session
     const row = await this.get(
