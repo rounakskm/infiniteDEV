@@ -11,7 +11,7 @@ All core infrastructure complete. Web dashboard built and tested.
 - `state-manager.js` — SQLite persistence (kv_store, agent_sessions, rate_limit_events)
 - `rate-limiter.js` — Threshold detection with configurable tiers (pro-20, max-100, max-200)
 - `log-monitor.js` — Watches `~/.claude/debug/` for rate limit errors
-- `claude-controller.js` — Pause/resume notifications, resume strategies (stdin/restart/notify)
+- `claude-controller.js` — Auto-resume via direct TTY writing (no tmux), fallback to restart/notify
 - `claude-detector.js` — Process detection via `ps aux`, session tracking via history.jsonl
 
 ### Health API (`src/health/`)
@@ -59,11 +59,15 @@ agent_sessions (id, agent_name, start_time, end_time, status, prompts_used)
 kv_store (key, value, updated_at)
 ```
 
-## How Rate Limit Detection Works
+## How Rate Limit Detection & Auto-Resume Works
 
 1. **Heartbeat path**: Hook sends prompt count via heartbeat → `agent_sessions.prompts_used` updates → daemon cron reads `getCurrentUsage()` → `shouldPause()` triggers at 90% threshold → `handleRateLimit()` sets pause + schedules auto-resume
 2. **Log path**: `log-monitor.js` tails `~/.claude/debug/` → detects 429/rate-limit patterns → `handleRateLimit()`
-3. **Auto-resume**: `setTimeout(resumeOperations, windowMs)` → clears pause state → next hook call allows session
+3. **Auto-resume**: `setTimeout(resumeOperations, windowMs)` → clears pause state → `resumeClaudeCode()`:
+   - Finds Claude Code's TTY via `ps` (e.g. `/dev/ttys002`)
+   - Writes `"continue\n"` directly to the TTY device
+   - No tmux required — works with any terminal
+   - Fallback: `claude --resume` if process exited, desktop notification if all fail
 
 ## Technology Stack
 

@@ -46,10 +46,10 @@ Replaced the Phase 1B wrapper script with native Claude Code hooks (UserPromptSu
 
 ---
 
-## Phase 2: Web Dashboard 🚧 IN PROGRESS
+## Phase 2: Web Dashboard & Auto-Resume 🚧 IN PROGRESS
 **Started**: 2026-02-14
 
-Real-time web UI for monitoring and controlling infiniteDEV.
+Real-time web UI and true automatic resume of Claude Code sessions.
 
 ### Completed
 - [x] Express server on port 3031 (`src/web/index.js`)
@@ -62,6 +62,23 @@ Real-time web UI for monitoring and controlling infiniteDEV.
 - [x] Updated `ecosystem.config.js` with `infinitedev-web` process
 - [x] Updated `bin/idev-start.sh` to manage web dashboard
 - [x] End-to-end rate limit test: inject usage → pause → 5min wait → auto-resume verified
+- [x] **True auto-resume via direct TTY writing** (no tmux required)
+- [x] `resumeOperations()` now calls `resumeClaudeCode()` (was only notifying before)
+- [x] `findClaudeTTY()` detects Claude's terminal via `ps` → writes `"continue\n"` to `/dev/ttysXXX`
+- [x] Removed tmux dependency from `sendStdinToClaude()`
+- [x] Fallback chain: TTY write → `claude --resume` → desktop notification
+
+### Auto-Resume Flow (fully wired)
+```
+Rate limit cooldown expires
+  → resumeOperations()
+    → resumeClaudeCode()
+      → findClaudeTTY() finds /dev/ttys002
+      → fs.writeFileSync("/dev/ttys002", "continue\n")
+      → Claude Code receives input and resumes
+    → If Claude not running: claude --resume
+    → If all fail: desktop notification
+```
 
 ### Dashboard features
 - Live status indicator (green = active, red pulsing = paused)
@@ -96,7 +113,7 @@ Daemon (src/daemon/index.js)
   ├─ Cron: checks usage every 5 min via agent_sessions table
   ├─ Log monitor: watches ~/.claude/debug/ for 429 errors
   ├─ On threshold: sets pause state, schedules auto-resume
-  └─ On resume: clears pause state, notifies user
+  └─ On resume: clears pause, finds Claude TTY, sends "continue"
   ↓
 Health API (port 3030) — session tracking endpoints
 Web Dashboard (port 3031) — real-time UI
