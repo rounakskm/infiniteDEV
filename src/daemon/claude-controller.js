@@ -160,58 +160,34 @@ class ClaudeController {
   }
 
   /**
-   * PHASE 1C-Alpha: Find tmux session running Claude Code
-   * Returns session name if found, null otherwise
+   * Find the TTY of a running Claude Code process
+   * Returns /dev/ttysXXX path or null
    */
-  async findClaudeTmuxSession() {
+  findClaudeTTY() {
     try {
-      const sessions = execSync('tmux list-sessions 2>/dev/null || true', {
+      const result = execSync("ps -o pid,tty,command | grep -i claude | grep -v grep | grep -v infinitedev | head -1", {
         encoding: 'utf8'
-      });
+      }).trim();
 
-      if (!sessions || sessions.trim().length === 0) {
-        return null;
+      if (!result) return null;
+
+      // Parse: "  36483 ttys002  claude"
+      const parts = result.trim().split(/\s+/);
+      if (parts.length >= 2 && parts[1] !== '??') {
+        const tty = `/dev/${parts[1]}`;
+        console.log(`[ClaudeController] Found Claude Code on TTY: ${tty} (PID: ${parts[0]})`);
+        return tty;
       }
-
-      // Look for tmux sessions with 'claude' in the name
-      const lines = sessions.trim().split('\n');
-      for (const line of lines) {
-        if (line.includes('claude')) {
-          // Extract session name (before the colon)
-          const sessionName = line.split(':')[0];
-          console.log(`[ClaudeController] Found tmux session: ${sessionName}`);
-          return sessionName;
-        }
-      }
-
-      // If no claude-named session, check all sessions for Claude processes
-      for (const line of lines) {
-        const sessionName = line.split(':')[0];
-        try {
-          // Check if this session has any Claude processes
-          const windowList = execSync(`tmux list-windows -t ${sessionName} 2>/dev/null || true`, {
-            encoding: 'utf8'
-          });
-
-          if (windowList.includes('claude')) {
-            console.log(`[ClaudeController] Found Claude in tmux session: ${sessionName}`);
-            return sessionName;
-          }
-        } catch (error) {
-          // Skip this session
-        }
-      }
-
       return null;
     } catch (error) {
-      console.error(`[ClaudeController] Error finding tmux session: ${error.message}`);
+      console.error(`[ClaudeController] Error finding Claude TTY: ${error.message}`);
       return null;
     }
   }
 
   /**
-   * PHASE 1C-Alpha: Send input to Claude Code via tmux
-   * Sends a prompt string to the tmux session's stdin
+   * Send input to Claude Code by writing to its TTY
+   * Works with any terminal (no tmux required)
    */
   async sendStdinToClaude(prompt = 'continue') {
     try {
@@ -222,21 +198,18 @@ class ClaudeController {
         return { success: false, reason: 'not_running' };
       }
 
-      // Try to find tmux session
-      const tmuxSession = await this.findClaudeTmuxSession();
-      if (!tmuxSession) {
-        console.log('[ClaudeController] No tmux session found for Claude Code');
-        return { success: false, reason: 'no_tmux_session' };
+      const tty = this.findClaudeTTY();
+      if (!tty) {
+        console.log('[ClaudeController] Could not find Claude Code TTY');
+        return { success: false, reason: 'no_tty' };
       }
 
-      // Send input to tmux session
-      execSync(`tmux send-keys -t ${tmuxSession} "${prompt}" Enter`, {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
+      // Write the prompt + newline to the TTY
+      const fs = require('fs');
+      fs.writeFileSync(tty, prompt + '\n');
 
-      console.log(`[ClaudeController] Sent "${prompt}" to tmux session ${tmuxSession}`);
-      return { success: true, method: 'tmux', session: tmuxSession, prompt: prompt };
+      console.log(`[ClaudeController] Sent "${prompt}" to ${tty}`);
+      return { success: true, method: 'tty', tty, prompt };
     } catch (error) {
       console.error(`[ClaudeController] Error sending stdin to Claude: ${error.message}`);
       return { success: false, reason: 'send_error', error: error.message };

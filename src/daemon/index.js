@@ -216,11 +216,19 @@ class RateLimitDaemon {
     // Clear pause state so the hook allows new sessions
     await this.stateManager.setState('pause', null);
 
-    // Notify user they can resume
+    // Try to auto-resume Claude Code (send "continue" to its terminal)
     try {
-      await this.claudeController.notifyUserToResume();
+      const result = await this.claudeController.resumeClaudeCode({
+        customPrompt: this.config.daemon?.resumePrompt || 'continue'
+      });
+      if (result.success) {
+        console.log(`[Daemon] Claude Code auto-resumed via ${result.method}`);
+      } else {
+        console.log(`[Daemon] Auto-resume failed (${result.reason}), user notified`);
+      }
     } catch (error) {
-      console.error('[Daemon] Error notifying user:', error.message);
+      console.error('[Daemon] Error during auto-resume:', error.message);
+      await this.claudeController.notifyUserToResume();
     }
 
     // Record resume event
@@ -231,7 +239,7 @@ class RateLimitDaemon {
       usageData: await this.stateManager.getCurrentUsage()
     });
 
-    console.log('[Daemon] Operations resumed. User can now run claude.');
+    console.log('[Daemon] Operations resumed.');
   }
 }
 
