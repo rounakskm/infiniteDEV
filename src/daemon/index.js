@@ -172,13 +172,21 @@ class RateLimitDaemon {
   }
 
   async handleRateLimit(signal) {
+    // Deduplicate: if already paused, ignore subsequent signals
+    if (this.isPaused) {
+      console.log('[Daemon] Already paused, ignoring duplicate rate limit signal');
+      return;
+    }
+
     console.log('[Daemon] Handling rate limit signal:', signal.type);
-
     this.isPaused = true;
-    const resetTime = signal.resetTime || this.rateLimiter.calculateNextResetTime();
-    const resumeDelay = resetTime - Date.now();
 
-    // Notify user that rate limit was hit and Claude Code should be paused
+    // Use config-based window instead of log-extracted reset time (which defaults to 5h)
+    const limits = this.rateLimiter.getTierLimits(this.config.tier);
+    const resetTime = Date.now() + limits.window;
+    const resumeDelay = limits.window;
+
+    // Notify user
     try {
       await this.claudeController.notifyUserToPause();
       console.log('[Daemon] User notified about rate limit');
@@ -202,10 +210,10 @@ class RateLimitDaemon {
       reason: signal.type
     });
 
-    const hours = (resumeDelay / (1000 * 60 * 60)).toFixed(1);
-    console.log(`[Daemon] System paused. Will attempt automatic resume in ${hours} hours at ${new Date(resetTime).toISOString()}`);
+    const minutes = (resumeDelay / (1000 * 60)).toFixed(1);
+    console.log(`[Daemon] System paused. Will auto-resume in ${minutes} min at ${new Date(resetTime).toISOString()}`);
 
-    // Schedule automatic resume
+    // Schedule automatic resume (single timer)
     setTimeout(() => this.resumeOperations(), resumeDelay);
   }
 

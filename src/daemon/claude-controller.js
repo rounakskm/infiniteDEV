@@ -261,105 +261,31 @@ class ClaudeController {
   }
 
   /**
-   * PHASE 1B: Unified auto-resume logic using session tracking
-   * Uses registered session data for reliable resume
+   * Auto-resume Claude Code after rate limit cooldown.
+   * Strategy 1: Find Claude's TTY and write "continue" to it (most common case)
+   * Strategy 2: Desktop notification as fallback
    */
   async resumeClaudeCode(options = {}) {
     console.log('[ClaudeController] Attempting automatic resume...');
 
     try {
-      // Phase 1B: Try to use session tracking data first
-      if (this.stateManager) {
-        const activeSessionId = await this.stateManager.getState('active_session');
+      const prompt = options.customPrompt || this.config?.resumePrompt || 'continue';
 
-        if (activeSessionId) {
-          const sessionData = await this.stateManager.getState(`session:${activeSessionId}`);
-
-          if (sessionData) {
-            console.log(`[ClaudeController] Found active session: ${activeSessionId}`);
-            console.log(`[ClaudeController] Working dir: ${sessionData.workingDir}`);
-            console.log(`[ClaudeController] PID: ${sessionData.pid}`);
-
-            // Strategy 1: Check if process still exists
-            const isStillRunning = this.isProcessRunning(sessionData.pid);
-
-            if (isStillRunning) {
-              console.log('[ClaudeController] Claude Code process still running, attempting stdin strategy');
-              const prompt = options.customPrompt || this.config?.resumePrompt || 'continue';
-              const result = await this.sendStdinToClaude(prompt);
-
-              if (result.success) {
-                console.log('[ClaudeController] Auto-resume successful via stdin');
-                return { success: true, method: 'stdin', sessionId: activeSessionId, ...result };
-              }
-            }
-
-            // Strategy 2: Restart in the correct working directory
-            console.log('[ClaudeController] Attempting restart in working directory');
-            const result = await this.restartClaude(sessionData.workingDir, activeSessionId);
-
-            if (result.success) {
-              console.log('[ClaudeController] Auto-resume successful via restart');
-              return { success: true, method: 'restart', sessionId: activeSessionId, ...result };
-            }
-
-            // Phase 1B session tracking failed, fall back to passive detection
-            console.log('[ClaudeController] Session-based strategies failed, falling back to passive detection');
-          }
-        }
+      // Strategy 1: Send prompt directly to Claude's TTY
+      const result = await this.sendStdinToClaude(prompt);
+      if (result.success) {
+        console.log(`[ClaudeController] Auto-resume successful via ${result.method}`);
+        return { success: true, ...result };
       }
 
-      // Fallback: Use passive detection if session tracking not available
-      console.log('[ClaudeController] Using passive detection for resume strategy');
-      const strategy = await this.detectResumeStrategy();
-      console.log(`[ClaudeController] Resume strategy detected: ${strategy.strategy} (${strategy.reason})`);
-
-      // Strategy 1: Try to send stdin to running Claude Code
-      if (strategy.strategy === 'stdin') {
-        const prompt = options.customPrompt || this.config?.resumePrompt || 'continue';
-        console.log('[ClaudeController] Attempting stdin resume strategy...');
-        const result = await this.sendStdinToClaude(prompt);
-
-        if (result.success) {
-          console.log('[ClaudeController] Auto-resume successful via stdin');
-          return { success: true, method: 'stdin', ...result };
-        }
-
-        console.log('[ClaudeController] Stdin strategy failed, falling back to restart');
-      }
-
-      // Strategy 2: Restart Claude Code
-      if (strategy.strategy === 'restart' || !strategy.canResume) {
-        if (strategy.lastSession || !strategy.canResume) {
-          const workingDir = options.workingDir || process.cwd();
-          console.log('[ClaudeController] Attempting restart resume strategy...');
-          const result = await this.restartClaude(workingDir, strategy.lastSession?.sessionId);
-
-          if (result.success) {
-            console.log('[ClaudeController] Auto-resume successful via restart');
-            return { success: true, method: 'restart', ...result };
-          }
-        }
-      }
-
-      // All strategies failed - notify user
-      console.log('[ClaudeController] All auto-resume strategies failed, notifying user');
+      // Strategy 2: Notify user (Claude not running or TTY not found)
+      console.log(`[ClaudeController] TTY strategy failed (${result.reason}), notifying user`);
       await this.notifyUserToResume();
-
-      return {
-        success: false,
-        reason: 'all_strategies_failed',
-        notified: true
-      };
+      return { success: false, reason: result.reason, notified: true };
     } catch (error) {
       console.error(`[ClaudeController] Error during auto-resume: ${error.message}`);
-      await this.notifyUserToResume(); // Fallback
-      return {
-        success: false,
-        reason: 'unexpected_error',
-        error: error.message,
-        notified: true
-      };
+      await this.notifyUserToResume();
+      return { success: false, reason: 'error', error: error.message, notified: true };
     }
   }
 }
